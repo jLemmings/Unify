@@ -32,9 +32,9 @@ var wgFileReader = sync.WaitGroup{}
 
 func main() {
 	// Flags
-	input := flag.String("input", "/Users/joshuahemmings/go/src/github.com/jLemmings/Unify/testDocuments", "Data to Import [STRING]")
-	outFolder := flag.String("output", "/Users/joshuahemmings/go/src/github.com/jLemmings/Unify/out/", "output folder")
-	stepSize := flag.Int("step", 50000, "step size")
+	input := flag.String("input", "", "Data to Import [STRING]")
+	outFolder := flag.String("output", "", "output folder")
+	stepSize := flag.Int("step", 5000000, "step size")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	outputDelimiter := flag.String("outDelimiter", "|", "Output Delimiter [CHAR]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
@@ -47,11 +47,9 @@ func main() {
 
 	flag.Parse()
 
-
-
 	compiledRegex := regexp.MustCompile("^(.*?)[" + *delimiters + "](.*)$")
 
-	credChannel := make(chan creds, 1000)
+	credChannel := make(chan creds, 100)
 	filePathChannel := make(chan string, *concurrency)
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
@@ -106,7 +104,7 @@ func main() {
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 
-	<- stopFileWalkChannel
+	<-stopFileWalkChannel
 	close(filePathChannel)
 
 	log.Println("Waiting for File Readers to finish")
@@ -115,19 +113,18 @@ func main() {
 	close(credChannel)
 	log.Println("Closed Credential Channel")
 
-
-	<- stopToolChannel
+	<-stopToolChannel
 
 }
 
 func fileWriter(outputDelimiter string, outFolder string, stepSize int, credChannel chan creds, stopToolChannel chan bool) {
 	log.Print("Starting file writer.")
 
-	currentFile := 0
+	currentFileNumber := 0
 	currLine := 0
-	currFile, err := os.Create(outFolder + "output-" + strconv.Itoa(currentFile) + ".txt")
-	defer currFile.Close()
-	currentFile++;
+	currentFile, err := os.Create(outFolder + "output-" + strconv.Itoa(currentFileNumber) + ".txt")
+
+	currentFileNumber++
 	if err != nil {
 		log.Fatalf("Fatal Error: %v", err)
 	}
@@ -140,15 +137,14 @@ func fileWriter(outputDelimiter string, outFolder string, stepSize int, credChan
 			break
 		}
 
-		currFile.WriteString(credential.user + outputDelimiter + credential.clearPass + outputDelimiter +
+		currentFile.WriteString(credential.user + outputDelimiter + credential.clearPass + outputDelimiter +
 			credential.md5Pass + outputDelimiter + credential.sha1Pass + "\n")
 		currLine++
 		if currLine%stepSize == 0 {
-			err = currFile.Close()
-			currFile, err = os.Create(outFolder + "output-" + strconv.Itoa(currentFile) + ".txt")
-			currentFile++
+			err = currentFile.Close()
+			currentFile, err = os.Create(outFolder + "output-" + strconv.Itoa(currentFileNumber) + ".txt")
+			currentFileNumber++
 		}
-
 
 	}
 	log.Print("Done writing.")
@@ -200,6 +196,7 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, credChanne
 
 			*numberOfProcessedFiles++
 			log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
+			close(path)
 			runtime.GC()
 		} else {
 			log.Println("Closing readFile Goroutine")
